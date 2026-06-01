@@ -5,7 +5,8 @@ using UnityEngine;
 namespace Functional.Examples
 {
     /// <summary>
-    /// ECS 怪物批量生成示例。生成大量实体并由 MovementSystem 驱动。
+    /// 轻量 ECS 怪物生成示例（每实体一个 GameObject，仅适合数百～两千）。
+    /// 10 万同屏请改用 DOTS：Functional.DOTS.MonsterDotsSpawner，见 DOTS/README_DOTS设置指南.md
     /// 需场景中有 ECSWorldRunner。
     /// </summary>
     public class ExampleMonsterSpawner : MonoBehaviour
