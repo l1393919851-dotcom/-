@@ -127,19 +127,35 @@ for i in range(N_FRAMES):
     Image.fromarray(rgba, 'RGBA').save(out_path, optimize=True)
     print(f'  帧{i}: coil={coil_h}px, 框架=8px, 暗缝=6px, 可见slat={visible}px, 卷起={rolled}px')
 
-# ===== Base 门区域涂黑 =====
-# 把 base 的门区域 (x=524-596, y=625-699) 涂成纯黑
-# 这样序列帧播完 (slat 全卷走) 时, 露出的就是黑 (室内)
-# 注意: 输出为 RGB (无 alpha 通道), 彻底避免任何透明/棋盘格问题
-print(f'\n处理 base 门区域: x={DOOR_X0}-{DOOR_X1}, y={DOOR_Y0}-{DOOR_Y1-1}')
+# ===== Base 处理: 背景抠透明 + 门洞涂黑 =====
+# 把原图浅灰/白色背景抠成透明, 留下建筑; 门洞涂黑露出"室内"
+# 序列帧播完时, 卷帘门消失, 露出 base 上预涂的纯黑门洞
+print(f'\n处理 base: 背景抠透明 + 门洞涂黑 ({DOOR_X0}-{DOOR_X1}, {DOOR_Y0}-{DOOR_Y1-1})')
 img2 = Image.open('Assets/Art/Buildings/NeonTower/Sprites/bldg_neon_tower_base.png').convert('RGB')
-arr2 = np.array(img2)
-# 门区域 → 纯黑 (RGB=0)
-arr2[DOOR_Y0:DOOR_Y1, DOOR_X0:DOOR_X1, 0] = 0
-arr2[DOOR_Y0:DOOR_Y1, DOOR_X0:DOOR_X1, 1] = 0
-arr2[DOOR_Y0:DOOR_Y1, DOOR_X0:DOOR_X1, 2] = 0
-Image.fromarray(arr2, 'RGB').save('Assets/Art/Buildings/NeonTower/Sprites/bldg_neon_tower_base.png', optimize=True)
-print(f'Base 门区域已涂黑 (纯黑 72x75), 输出为 RGB 无 alpha')
+arr2 = np.array(img2).astype(np.float32)
+
+r2, g2, b2 = arr2[:,:,0], arr2[:,:,1], arr2[:,:,2]
+avg2 = (r2 + g2 + b2) / 3.0
+sat2 = np.maximum(np.maximum(r2, g2), b2) - np.minimum(np.minimum(r2, g2), b2)
+
+# 识别浅灰背景 + 右下角水印 → 透明
+bg_mask2 = (avg2 > 200) & (sat2 < 20)
+watermark_mask2 = np.zeros_like(bg_mask2, dtype=bool)
+watermark_mask2[680:720, 1050:1280] = True
+watermark_mask2 &= (avg2 > 180)
+combined_mask2 = bg_mask2 | watermark_mask2
+
+# 门洞涂纯黑 (RGB=0)
+arr2[DOOR_Y0:DOOR_Y1, DOOR_X0:DOOR_X1] = [0, 0, 0]
+
+# 输出 RGBA: 背景透明 (alpha=0), 建筑+门洞不透明 (alpha=255)
+out_rgb = arr2.astype(np.uint8)
+rgba2 = np.zeros((out_rgb.shape[0], out_rgb.shape[1], 4), dtype=np.uint8)
+rgba2[:, :, :3] = out_rgb
+rgba2[:, :, 3] = np.where(combined_mask2, 0, 255)
+
+Image.fromarray(rgba2, 'RGBA').save('Assets/Art/Buildings/NeonTower/Sprites/bldg_neon_tower_base.png', optimize=True)
+print(f'Base 已处理: 透明像素 {combined_mask2.sum()} 个, 门洞涂黑 72x75, 输出 RGBA')
 
 # ===== 拼预览 (黑底 + 帧号) =====
 print(f'\n生成预览:')
