@@ -15,16 +15,22 @@ namespace Gameplay.Effects
     public class LocalSpaceShatterReveal : MonoBehaviour
     {
         static readonly int IntensityId = Shader.PropertyToID("_Intensity");
+        static readonly int ExpandId = Shader.PropertyToID("_Expand");
         static readonly int HoleId = Shader.PropertyToID("_Hole");
 
         [Header("Surface")]
         [SerializeField] Renderer shatterRenderer;
-        [SerializeField] float shatterDuration = 0.55f;
+        [SerializeField] float shatterDuration = 5f;
         [SerializeField] float holeDuration = 0.45f;
         [SerializeField] float holdOpen = 0.2f;
         [SerializeField] bool fadeShatterAfterReveal = true;
         [SerializeField] float fadeDuration = 0.35f;
         [SerializeField] bool playOnEnable;
+        [SerializeField] AnimationCurve expandCurve = new AnimationCurve(
+            new Keyframe(0f, 0f, 0f, 0.4f),
+            new Keyframe(0.35f, 0.2f, 0.5f, 0.5f),
+            new Keyframe(0.7f, 0.55f, 1.2f, 1.2f),
+            new Keyframe(1f, 1f, 1.5f, 0f));
 
         [Header("Monster")]
         [SerializeField] GameObject monster;
@@ -56,7 +62,7 @@ namespace Gameplay.Effects
             if (monsterAppear == null && monster != null)
                 monsterAppear = monster.GetComponentInChildren<CyberAppearEffect>(true);
 
-            SetShader(0f, 0f);
+            SetShader(0f, 0f, 0f);
 
             if (hideMonsterOnAwake && monster != null)
             {
@@ -109,7 +115,7 @@ namespace Gameplay.Effects
                 _routine = null;
             }
 
-            SetShader(0f, 0f);
+            SetShader(0f, 0f, 0f);
             if (hideMonsterOnAwake && monster != null)
             {
                 if (monsterAppear != null)
@@ -122,7 +128,7 @@ namespace Gameplay.Effects
         IEnumerator PlayRoutine()
         {
             onShatterStart?.Invoke();
-            SetShader(0f, 0f);
+            SetShader(0f, 0f, 0f);
 
             float shatterDur = Mathf.Max(0.01f, shatterDuration);
             float holeDur = Mathf.Max(0.01f, holeDuration);
@@ -130,18 +136,19 @@ namespace Gameplay.Effects
             float spawnGate = Mathf.Clamp01(monsterSpawnAt) * totalPreHold;
 
             float t = 0f;
-            // Phase 1: shatter builds
+            // Phase 1: 裂纹从中心慢慢扩大（默认约 5 秒）
             while (t < shatterDur)
             {
                 t += Time.deltaTime;
                 float u = Mathf.Clamp01(t / shatterDur);
-                float intensity = Smooth(u);
-                SetShader(intensity, 0f);
+                float expand = Mathf.Clamp01(expandCurve.Evaluate(u));
+                float intensity = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u * 3f));
+                SetShader(intensity, expand, 0f);
                 TrySpawnMonster(t, spawnGate);
                 yield return null;
             }
 
-            SetShader(1f, 0f);
+            SetShader(1f, 1f, 0f);
 
             // Phase 2: hole opens → see monster
             float h = 0f;
@@ -150,12 +157,12 @@ namespace Gameplay.Effects
                 h += Time.deltaTime;
                 float elapsed = shatterDur + h;
                 float hole = Smooth(Mathf.Clamp01(h / holeDur));
-                SetShader(1f, hole);
+                SetShader(1f, 1f, hole);
                 TrySpawnMonster(elapsed, spawnGate);
                 yield return null;
             }
 
-            SetShader(1f, 1f);
+            SetShader(1f, 1f, 1f);
             TrySpawnMonster(totalPreHold, spawnGate);
 
             if (holdOpen > 0f)
@@ -170,13 +177,11 @@ namespace Gameplay.Effects
                 {
                     f += Time.deltaTime;
                     float k = 1f - Smooth(Mathf.Clamp01(f / fadeDur));
-                    SetShader(k, 1f);
+                    SetShader(k, 1f, 1f);
                     yield return null;
                 }
 
-                SetShader(0f, 1f);
-                // 完全清掉遮罩，只留怪物
-                SetShader(0f, 0f);
+                SetShader(0f, 0f, 0f);
             }
 
             onFinished?.Invoke();
@@ -193,10 +198,7 @@ namespace Gameplay.Effects
             {
                 monster.SetActive(true);
                 if (monsterAppear != null)
-                {
-                    // CyberAppear 默认 PlayOnEnable；若已激活则手动 Play
                     monsterAppear.Play();
-                }
             }
 
             onMonsterRevealed?.Invoke();
@@ -207,7 +209,7 @@ namespace Gameplay.Effects
             return x * x * (3f - 2f * x);
         }
 
-        void SetShader(float intensity, float hole)
+        void SetShader(float intensity, float expand, float hole)
         {
             if (shatterRenderer == null)
                 return;
@@ -217,6 +219,7 @@ namespace Gameplay.Effects
 
             shatterRenderer.GetPropertyBlock(_mpb);
             _mpb.SetFloat(IntensityId, Mathf.Clamp01(intensity));
+            _mpb.SetFloat(ExpandId, Mathf.Clamp01(expand));
             _mpb.SetFloat(HoleId, Mathf.Clamp01(hole));
             shatterRenderer.SetPropertyBlock(_mpb);
         }
